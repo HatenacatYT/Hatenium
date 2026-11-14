@@ -1,0 +1,13 @@
+{
+    // Change this if MSYS2 is installed somewhere else (e.g. "D:\\tools\\msys64").
+    "hatenium.msys2Root": "C:\\msys64",
+
+    "cmake.generator": "Ninja",
+    "cmake.buildDirectory": "${workspaceFolder}/build",
+    "cmake.configureOnOpen": false,
+    "C_Cpp.default.configurationProvider": "",
+    "files.associations": { "*.h": "cpp" },
+    "terminal.integrated.env.windows": {
+        "PATH": "${config:hatenium.msys2Root}\\ucrt64\\bin;${config:hatenium.msys2Root}\\usr\\bin;${env:PATH}"
+    }
+}

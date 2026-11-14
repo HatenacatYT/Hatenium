@@ -1,0 +1,27 @@
+{
+    "version": 4,
+    "configurations": [
+        {
+            "name": "MSYS2 UCRT64 (GCC)",
+            "compilerPath": "${config:hatenium.msys2Root}/ucrt64/bin/g++.exe",
+            "cStandard": "c17",
+            "cppStandard": "c++17",
+            "intelliSenseMode": "windows-gcc-x64",
+            "includePath": [
+                "${workspaceFolder}/src",
+                "${workspaceFolder}/build/_deps/imgui-src",
+                "${workspaceFolder}/build/_deps/imgui-src/backends",
+                "${workspaceFolder}/build/_deps/nlohmann_json-src/include",
+                "${workspaceFolder}/build-debug/_deps/imgui-src",
+                "${workspaceFolder}/build-debug/_deps/imgui-src/backends",
+                "${workspaceFolder}/build-debug/_deps/nlohmann_json-src/include",
+                "${config:hatenium.msys2Root}/ucrt64/include"
+            ],
+            "defines": [
+                "UNICODE", "_UNICODE", "NOMINMAX", "WIN32_LEAN_AND_MEAN",
+                "WINVER=0x0A00", "_WIN32_WINNT=0x0A00", "HATENIUM_VERSION=\"0.1.0\""
+            ],
+            "browse": { "limitSymbolsToIncludedHeaders": true }
+        }
+    ]
+}
