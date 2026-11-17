@@ -19,7 +19,6 @@ void DrawCombatPage(Application& app) {
     int cols = ui::ColumnCountForWidth(330);
     if (!ui::BeginColumns("##combat_cols", cols)) return;
 
-    ImGui::TableNextColumn();
     ui::BeginCard("Aimbot");
     if (ui::Checkbox("Enable", &c.aimbot.enable)) NotifyToggle("Aimbot", c.aimbot.enable);
     ui::SliderFloat("FOV", &c.aimbot.fov, 1.f, 180.f, "%.0f");
@@ -34,7 +33,6 @@ void DrawCombatPage(Application& app) {
     ui::SliderFloat("Vertical", &c.recoil.vertical, 0.f, 100.f, "%.0f%%");
     ui::EndCard();
 
-    ImGui::TableNextColumn();
     ui::BeginCard("Triggerbot");
     if (ui::Checkbox("Enable", &c.triggerbot.enable)) NotifyToggle("Triggerbot", c.triggerbot.enable);
     ui::Keybind("Keybind", &c.triggerbot.key);

@@ -13,7 +13,6 @@ void DrawMovementPage(Application& app) {
     int cols = ui::ColumnCountForWidth(330);
     if (!ui::BeginColumns("##move_cols", cols)) return;
 
-    ImGui::TableNextColumn();
     ui::BeginCard("Movement");
     ui::Checkbox("Bunny Hop", &m.bunnyHop);
     ui::Checkbox("Auto Strafe", &m.autoStrafe);
@@ -21,7 +20,6 @@ void DrawMovementPage(Application& app) {
     ui::Combo("Movement Preset", &m.preset, presets, 4);
     ui::EndCard();
 
-    ImGui::TableNextColumn();
     if (m.speedIndicator) {
         ui::BeginCard("Speed Indicator");
         ImVec2 p = ImGui::GetCursorScreenPos();

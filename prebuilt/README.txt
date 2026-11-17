@@ -1,4 +1,4 @@
-prebuilt/Hatenium.exe  (Release, x64, static runtime)
+prebuilt/Hatenium.exe  (v0.3.0, Release, x64, static runtime, built WITHOUT the YouTube option)
 
 This exe was cross-compiled on Linux with Ubuntu's MinGW-w64 GCC 13 (not MSYS2 UCRT64) to verify that the sources compile
 and link. It was smoke-tested under Wine only, NOT on a real Windows machine.

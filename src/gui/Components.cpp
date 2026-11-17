@@ -274,6 +274,32 @@ bool ShapeTile(const char* id, const char* label, bool selected, float rounding,
     return clicked;
 }
 
+bool SeekBar(const char* id, float frac, float* outFrac) {
+    const Theme& th = Th();
+    static ImGuiID dragging = 0;
+    static float dragFrac = 0.f;
+    ImGui::PushID(id);
+    ImGuiID gid = ImGui::GetID("##seek");
+    ImVec2 p = ImGui::GetCursorScreenPos();
+    float w = ImGui::GetContentRegionAvail().x, h = S(20);
+    ImGui::InvisibleButton("##seek", ImVec2(w, h));
+    bool hovered = ImGui::IsItemHovered(), active = ImGui::IsItemActive();
+    float x0 = p.x + S(3), x1 = p.x + w - S(3), cy = p.y + h * 0.5f;
+    bool released = false;
+    if (active) { dragging = gid; dragFrac = Clamp01((ImGui::GetIO().MousePos.x - x0) / std::max(x1 - x0, 1.f)); }
+    if (ImGui::IsItemDeactivated() && dragging == gid) { *outFrac = dragFrac; dragging = 0; released = true; }
+    float shown = (dragging == gid) ? dragFrac : Clamp01(frac);
+    float hv = Anim().Smooth(ImGui::GetID("##h"), (hovered || active) ? 1.f : 0.f, 14.f);
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    float tr_ = S(5);
+    dl->AddRectFilled(ImVec2(x0, cy - tr_ * 0.5f), ImVec2(x1, cy + tr_ * 0.5f), C32(th.frame), tr_);
+    float fx = x0 + (x1 - x0) * shown;
+    dl->AddRectFilled(ImVec2(x0, cy - tr_ * 0.5f), ImVec2(fx, cy + tr_ * 0.5f), C32(th.accent), tr_);
+    dl->AddCircleFilled(ImVec2(fx, cy), S(5.f) + S(2.f) * hv, C32(th.accent), 20);
+    ImGui::PopID();
+    return released;
+}
+
 bool Swatch(const char* id, const ImVec4& color, bool selected, float d) {
     const Theme& th = Th();
     ImGui::PushID(id);
@@ -293,12 +319,30 @@ bool Swatch(const char* id, const ImVec4& color, bool selected, float d) {
 }
 
 // ============================================================ layout
+namespace {
+// "Masonry" layout: every card goes into the currently shortest column, so columns stay balanced and no gaps remain.
+struct Masonry {
+    bool active = false;
+    int cols = 1, cur = 0;
+    float x0 = 0.f, y0 = 0.f, colW = 0.f, gapX = 0.f, gapY = 0.f;
+    float colY[4] = {0.f, 0.f, 0.f, 0.f};
+} g_m;
+} // namespace
+
 bool BeginCard(const char* title) {
     const Theme& th = Th();
+    ImVec2 size(0, 0);
+    if (g_m.active) {
+        int c = 0;
+        for (int i = 1; i < g_m.cols; ++i) if (g_m.colY[i] < g_m.colY[c] - 0.5f) c = i;
+        g_m.cur = c;
+        ImGui::SetCursorPos(ImVec2(g_m.x0 + c * (g_m.colW + g_m.gapX), g_m.y0 + g_m.colY[c]));
+        size = ImVec2(g_m.colW, 0);
+    }
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, S(14, 12));
     ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, th.cardRounding);
     ImGui::PushStyleColor(ImGuiCol_ChildBg, WithAlpha(th.card, th.panelOpacity));
-    ImGui::BeginChild(title, ImVec2(0, 0),
+    ImGui::BeginChild(title, size,
                       ImGuiChildFlags_Borders | ImGuiChildFlags_AutoResizeY | ImGuiChildFlags_AlwaysUseWindowPadding,
                       ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
     ImGui::PopStyleColor();
@@ -313,13 +357,36 @@ bool BeginCard(const char* title) {
     return true;
 }
 
-void EndCard() { ImGui::EndChild(); }
-
-bool BeginColumns(const char* id, int count) {
-    return ImGui::BeginTable(id, count,
-        ImGuiTableFlags_SizingStretchSame | ImGuiTableFlags_NoSavedSettings | ImGuiTableFlags_NoPadOuterX);
+void EndCard() {
+    ImGui::EndChild();
+    if (g_m.active) {
+        float h = ImGui::GetItemRectSize().y;
+        if (h < 1.f) h = S(180);   // first frame of a card: ImGui has not measured it yet
+        g_m.colY[g_m.cur] += h + g_m.gapY;
+    }
 }
-void EndColumns() { ImGui::EndTable(); }
+
+bool BeginColumns(const char*, int count) {
+    g_m = Masonry();
+    g_m.active = true;
+    g_m.cols = std::min(std::max(count, 1), 4);
+    const ImGuiStyle& st = ImGui::GetStyle();
+    g_m.gapX = st.ItemSpacing.x * 1.0f;
+    g_m.gapY = st.ItemSpacing.y;
+    float avail = ImGui::GetContentRegionAvail().x;
+    g_m.colW = std::floor((avail - g_m.gapX * (g_m.cols - 1)) / g_m.cols);
+    g_m.x0 = ImGui::GetCursorPosX();
+    g_m.y0 = ImGui::GetCursorPosY();
+    return true;
+}
+
+void EndColumns() {
+    float maxY = 0.f;
+    for (int i = 0; i < g_m.cols; ++i) maxY = std::max(maxY, g_m.colY[i]);
+    ImGui::SetCursorPos(ImVec2(g_m.x0, g_m.y0 + std::max(maxY - g_m.gapY, 0.f)));
+    ImGui::Dummy(ImVec2(1.f, 1.f));
+    g_m.active = false;
+}
 
 int ColumnCountForWidth(float minColumnLogical) {
     float w = ImGui::GetContentRegionAvail().x;

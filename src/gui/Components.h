@@ -15,6 +15,8 @@ bool Keybind(const char* label, int* key);
 bool Button(const char* label, ImVec2 size = ImVec2(0, 0), bool primary = false);
 // Selectable tile that previews a shape (kind 0: button, 1: window).
 bool ShapeTile(const char* id, const char* label, bool selected, float rounding, int kind, float width);
+// Horizontal progress/seek bar. Returns true on release with the chosen fraction in *outFrac.
+bool SeekBar(const char* id, float frac, float* outFrac);
 bool Swatch(const char* id, const ImVec4& color, bool selected, float diameter);
 
 // ---- layout ----

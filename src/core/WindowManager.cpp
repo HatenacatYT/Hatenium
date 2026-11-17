@@ -2,6 +2,8 @@
 #include "imgui.h"
 #include <windowsx.h>
 #include <commdlg.h>
+#include <shellapi.h>
+#include <shlobj.h>
 #include <algorithm>
 
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
@@ -65,7 +67,9 @@ bool WindowManager::Create(HINSTANCE inst, const RECT& r, const wchar_t* title) 
     wc.lpfnWndProc = WndProcStatic;
     wc.hInstance = inst;
     wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
-    wc.hIcon = LoadIconW(nullptr, IDI_APPLICATION);
+    wc.hIcon = LoadIconW(inst, MAKEINTRESOURCEW(1));
+    if (!wc.hIcon) wc.hIcon = LoadIconW(nullptr, IDI_APPLICATION);
+    wc.hIconSm = wc.hIcon;
     wc.lpszClassName = kClassName;
     RegisterClassExW(&wc);
 
@@ -74,6 +78,7 @@ bool WindowManager::Create(HINSTANCE inst, const RECT& r, const wchar_t* title) 
                             r.left, r.top, r.right - r.left, r.bottom - r.top,
                             nullptr, nullptr, inst, this);
     if (!hwnd_) return false;
+    DragAcceptFiles(hwnd_, TRUE);
 
     using Fn = UINT(WINAPI*)(HWND);
     if (auto fn = LoadUser32<Fn>("GetDpiForWindow")) dpi_ = fn(hwnd_);
@@ -95,13 +100,23 @@ void WindowManager::Show() {
 void WindowManager::PumpMessages() {
     MSG msg;
     while (PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE)) {
-        if (msg.message == WM_QUIT) quit_ = true;
+        if (msg.message == WM_QUIT) {
+            // Other windows living in this thread (e.g. an embedded browser window) may post WM_QUIT when they close;
+            // only quit when our own main window is really gone.
+            if (mainDestroyed_ || !hwnd_) quit_ = true;
+            continue;
+        }
         TranslateMessage(&msg);
         DispatchMessageW(&msg);
     }
 }
 
 void WindowManager::Minimize() { ShowWindow(hwnd_, SW_MINIMIZE); }
+
+void WindowManager::SetTopmost(bool on) {
+    topmost_ = on;
+    if (hwnd_) SetWindowPos(hwnd_, on ? HWND_TOPMOST : HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+}
 
 // ---------------------------------------------------------------- geometry
 void WindowManager::SetRect(const RECT& r) {
@@ -153,6 +168,49 @@ std::wstring WindowManager::FileDialog(bool save, const wchar_t* defaultName) {
     ofn.Flags = OFN_EXPLORER | OFN_NOCHANGEDIR | (save ? OFN_OVERWRITEPROMPT : (OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST));
     BOOL ok = save ? GetSaveFileNameW(&ofn) : GetOpenFileNameW(&ofn);
     return ok ? std::wstring(file) : std::wstring();
+}
+
+std::vector<std::wstring> WindowManager::OpenMusicFilesDialog() {
+    std::vector<wchar_t> buf(65536, L'\0');
+    OPENFILENAMEW ofn{};
+    ofn.lStructSize = sizeof(ofn);
+    ofn.hwndOwner = hwnd_;
+    ofn.lpstrFilter = L"Music (*.mp3;*.wav;*.flac)\0*.mp3;*.wav;*.flac\0All files (*.*)\0*.*\0\0";
+    ofn.lpstrFile = buf.data();
+    ofn.nMaxFile = static_cast<DWORD>(buf.size());
+    ofn.Flags = OFN_EXPLORER | OFN_ALLOWMULTISELECT | OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR;
+    std::vector<std::wstring> out;
+    if (!GetOpenFileNameW(&ofn)) return out;
+    std::wstring first = buf.data();
+    const wchar_t* p = buf.data() + first.size() + 1;
+    if (*p == L'\0') { out.push_back(first); return out; }          // a single file: full path
+    while (*p) { std::wstring name = p; out.push_back(first + L"\\" + name); p += name.size() + 1; }
+    return out;
+}
+
+std::wstring WindowManager::ImageDialog() {
+    wchar_t file[MAX_PATH * 2] = {};
+    OPENFILENAMEW ofn{};
+    ofn.lStructSize = sizeof(ofn);
+    ofn.hwndOwner = hwnd_;
+    ofn.lpstrFilter = L"Images (*.png;*.jpg;*.jpeg)\0*.png;*.jpg;*.jpeg\0All files (*.*)\0*.*\0\0";
+    ofn.lpstrFile = file;
+    ofn.nMaxFile = MAX_PATH * 2;
+    ofn.Flags = OFN_EXPLORER | OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR;
+    return GetOpenFileNameW(&ofn) ? std::wstring(file) : std::wstring();
+}
+
+std::wstring WindowManager::FolderDialog() {
+    BROWSEINFOW bi{};
+    bi.hwndOwner = hwnd_;
+    bi.ulFlags = BIF_RETURNONLYFSDIRS | BIF_NEWDIALOGSTYLE;
+    LPITEMIDLIST pidl = SHBrowseForFolderW(&bi);
+    if (!pidl) return {};
+    wchar_t path[MAX_PATH * 2] = {};
+    std::wstring result;
+    if (SHGetPathFromIDListW(pidl, path)) result = path;
+    CoTaskMemFree(pidl);
+    return result;
 }
 
 // ---------------------------------------------------------------- window proc
@@ -231,7 +289,17 @@ LRESULT WindowManager::WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         if ((wp & 0xFFF0) == SC_KEYMENU) return 0;   // no ALT menu beep
         break;
     case WM_CLOSE: closeRequested_ = true; return 0;
-    case WM_DESTROY: PostQuitMessage(0); return 0;
+    case WM_DROPFILES: {
+        HDROP drop = reinterpret_cast<HDROP>(wp);
+        UINT n = DragQueryFileW(drop, 0xFFFFFFFF, nullptr, 0);
+        for (UINT i = 0; i < n; ++i) {
+            wchar_t path[MAX_PATH * 2];
+            if (DragQueryFileW(drop, i, path, MAX_PATH * 2)) dropped_.push_back(path);
+        }
+        DragFinish(drop);
+        return 0;
+    }
+    case WM_DESTROY: mainDestroyed_ = true; PostQuitMessage(0); return 0;
     }
     return DefWindowProcW(hwnd, msg, wp, lp);
 }

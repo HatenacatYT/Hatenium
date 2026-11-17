@@ -24,6 +24,9 @@ public:
     void SetScale(float s) { t_.scale = s; }
     void SetLogoFont(ImFont* f) { logoFont_ = f; }
     ImFont* LogoFont() const { return logoFont_; }
+    void SetLogoTexture(ImTextureID t) { logoTex_ = t; hasLogoTex_ = true; }
+    bool HasLogoTexture() const { return hasLogoTex_; }
+    ImTextureID LogoTexture() const { return logoTex_; }
     void Update(const Settings& s, float dt, bool snap = false);
     const Theme& T() const { return t_; }
 
@@ -33,6 +36,8 @@ private:
     bool init_ = false;
     float btnLogical_ = 8.f, winLogical_ = 14.f;
     ImFont* logoFont_ = nullptr;
+    ImTextureID logoTex_{};
+    bool hasLogoTex_ = false;
 };
 
 inline float S(float v) { return v * ThemeManager::Get().T().scale; }

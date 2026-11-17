@@ -37,9 +37,12 @@ void DrawSetup(Application& app) {
     ImVec2 p = ImGui::GetCursorScreenPos();
     float availW = ImGui::GetContentRegionAvail().x;
     ImFont* f = ImGui::GetFont();
-    dl->AddCircle(ImVec2(p.x + S(10), p.y + S(12)), S(8), C32(th.accent), 32, S(2));
-    dl->AddText(f, f->FontSize * 1.35f, ImVec2(p.x + S(28), p.y), C32(th.text), "HATENIUM");
-    ImGui::Dummy(ImVec2(0, f->FontSize * 1.35f + S(4)));
+    float lh = f->FontSize * 1.9f;
+    if (ThemeManager::Get().HasLogoTexture())
+        dl->AddImage(ThemeManager::Get().LogoTexture(), ImVec2(p.x, p.y - S(2)), ImVec2(p.x + lh, p.y - S(2) + lh));
+    else dl->AddCircle(ImVec2(p.x + S(10), p.y + S(12)), S(8), C32(th.accent), 32, S(2));
+    dl->AddText(f, f->FontSize * 1.35f, ImVec2(p.x + lh + S(8), p.y + lh * 0.5f - f->FontSize * 0.7f), C32(th.text), "HATENIUM");
+    ImGui::Dummy(ImVec2(0, lh + S(2)));
     ImGui::TextColored(th.text, "%s", tr("Appearance Setup"));
     ImGui::PushTextWrapPos(0.f);
     ImGui::TextColored(th.textMuted, "%s", tr("Choose how Hatenium looks. You can change this any time in Settings."));

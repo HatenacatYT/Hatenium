@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(Hatenium VERSION 0.1.0 LANGUAGES C CXX)
+project(Hatenium VERSION 0.3.0 LANGUAGES C CXX RC)
 
 if(MSVC)
     message(FATAL_ERROR "Hatenium targets MinGW-w64 GCC (MSYS2 UCRT64). MSVC / Visual Studio is not supported.")
@@ -14,6 +14,7 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
 endif()
 
+option(HATENIUM_ENABLE_YOUTUBE "Build the embedded YouTube player (downloads the WebView2 SDK headers from NuGet)" OFF)
 option(HATENIUM_STATIC_RUNTIME "Link the GCC/C++ runtime statically (single standalone exe)" ON)
 
 # ---------------------------------------------------------------------------
@@ -31,9 +32,15 @@ FetchContent_Declare(nlohmann_json
     URL https://github.com/nlohmann/json/releases/download/v3.11.3/json.tar.xz
     DOWNLOAD_EXTRACT_TIMESTAMP TRUE)
 
+FetchContent_Declare(miniaudio
+    GIT_REPOSITORY https://github.com/mackron/miniaudio.git
+    GIT_TAG        0.11.24
+    GIT_SHALLOW    TRUE
+    SOURCE_SUBDIR  hatenium_no_cmake)      # header-only: only download, do not run its CMake
+
 set(JSON_BuildTests OFF CACHE INTERNAL "")
 set(JSON_Install    OFF CACHE INTERNAL "")
-FetchContent_MakeAvailable(imgui nlohmann_json)
+FetchContent_MakeAvailable(imgui nlohmann_json miniaudio)
 
 add_library(imgui_lib STATIC
     ${imgui_SOURCE_DIR}/imgui.cpp
@@ -51,13 +58,21 @@ target_link_libraries(imgui_lib PUBLIC d3d11 dxgi d3dcompiler dwmapi imm32 gdi32
 # ---------------------------------------------------------------------------
 file(GLOB_RECURSE HATENIUM_SOURCES CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/src/*.cpp)
 
-add_executable(Hatenium WIN32 ${HATENIUM_SOURCES})
-target_include_directories(Hatenium PRIVATE ${CMAKE_SOURCE_DIR}/src)
+configure_file(${CMAKE_SOURCE_DIR}/src/resources/hatenium.rc.in ${CMAKE_BINARY_DIR}/hatenium.rc @ONLY)
+add_executable(Hatenium WIN32 ${HATENIUM_SOURCES} ${CMAKE_BINARY_DIR}/hatenium.rc)
+target_include_directories(Hatenium PRIVATE ${CMAKE_SOURCE_DIR}/src ${miniaudio_SOURCE_DIR})
 target_compile_definitions(Hatenium PRIVATE
     HATENIUM_VERSION="${PROJECT_VERSION}"
     WINVER=0x0A00 _WIN32_WINNT=0x0A00 WIN32_LEAN_AND_MEAN)
 target_compile_options(Hatenium PRIVATE -Wall -Wextra -Wno-unused-parameter)
-target_link_libraries(Hatenium PRIVATE imgui_lib nlohmann_json::nlohmann_json comdlg32 user32 shell32 ole32)
+target_link_libraries(Hatenium PRIVATE imgui_lib nlohmann_json::nlohmann_json comdlg32 user32 shell32 ole32 gdiplus gdi32 winmm uuid winhttp)
+
+# ---------------------------------------------------------------------------
+# Optional: embedded YouTube player (WebView2). Needs the Microsoft WebView2 SDK headers from NuGet.
+# ---------------------------------------------------------------------------
+if(HATENIUM_ENABLE_YOUTUBE)
+    include(cmake/YouTube.cmake)
+endif()
 
 if(HATENIUM_STATIC_RUNTIME)
     target_link_options(Hatenium PRIVATE -static -static-libgcc -static-libstdc++)

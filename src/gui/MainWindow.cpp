@@ -11,12 +11,15 @@ namespace hat::gui {
 
 namespace {
 
-const char* kTabs[5] = {"Combat", "Visuals", "Movement", "Misc", "Settings"};
-const char* kTabDesc[5] = {
+const char* kTabs[8] = {"Combat", "Visuals", "HUD", "Movement", "Misc", "Music", "Tools", "Settings"};
+const char* kTabDesc[8] = {
     "UI demo only - nothing here touches any game.",
-    "Preview canvas, crosshair and settings (everything is drawn inside Hatenium).",
+    "Crosshair, FOV circle, mouse trail and click particles - live preview and real screen overlay.",
+    "Key strokes and CPS counter drawn by the overlay.",
     "Movement presets and indicators (demo only).",
     "Interface extras and notifications.",
+    "Play your own music files from this PC.",
+    "Timer, stopwatch, play time and server region.",
     "Appearance, window, application and configuration."};
 
 constexpr float kTwoPi = 6.2831853f;
@@ -38,14 +41,28 @@ void DrawTabIcon(ImDrawList* dl, int tab, ImVec2 c, float s, ImU32 col) {
         dl->AddBezierCubic(l, ImVec2(c.x - s * 0.2f, c.y + s * 0.55f), ImVec2(c.x + s * 0.2f, c.y + s * 0.55f), r, col, lw);
         dl->AddCircleFilled(c, s * 0.16f, col, 16);
         break; }
-    case 2:   // double chevron
+    case 2:   // HUD: window with key caps
+        dl->AddRect(ImVec2(c.x - s * 0.5f, c.y - s * 0.38f), ImVec2(c.x + s * 0.5f, c.y + s * 0.38f), col, s * 0.1f, 0, lw);
+        for (int i = 0; i < 3; ++i) dl->AddRectFilled(ImVec2(c.x - s * 0.34f + i * s * 0.24f, c.y - s * 0.1f), ImVec2(c.x - s * 0.18f + i * s * 0.24f, c.y + s * 0.18f), col, s * 0.04f);
+        break;
+    case 6: { // stopwatch
+        dl->AddCircle(ImVec2(c.x, c.y + s * 0.06f), s * 0.38f, col, 24, lw);
+        dl->AddLine(ImVec2(c.x, c.y + s * 0.06f), ImVec2(c.x + s * 0.18f, c.y - s * 0.12f), col, lw);
+        dl->AddLine(ImVec2(c.x - s * 0.1f, c.y - s * 0.48f), ImVec2(c.x + s * 0.1f, c.y - s * 0.48f), col, lw);
+        break; }
+    case 5: { // music note
+        dl->AddCircleFilled(ImVec2(c.x - s * 0.18f, c.y + s * 0.3f), s * 0.17f, col, 16);
+        dl->AddLine(ImVec2(c.x - s * 0.02f, c.y + s * 0.3f), ImVec2(c.x - s * 0.02f, c.y - s * 0.42f), col, lw);
+        dl->AddLine(ImVec2(c.x - s * 0.02f, c.y - s * 0.42f), ImVec2(c.x + s * 0.3f, c.y - s * 0.22f), col, lw * 1.3f);
+        break; }
+    case 3:   // double chevron
         for (int i = 0; i < 2; ++i) {
             float x = c.x - s * 0.2f + i * s * 0.34f;
             dl->AddLine(ImVec2(x - s * 0.14f, c.y - s * 0.3f), ImVec2(x + s * 0.14f, c.y), col, lw);
             dl->AddLine(ImVec2(x + s * 0.14f, c.y), ImVec2(x - s * 0.14f, c.y + s * 0.3f), col, lw);
         }
         break;
-    case 3:   // 2x2 grid
+    case 4:   // 2x2 grid
         for (int i = 0; i < 4; ++i) {
             float x = c.x + ((i & 1) ? s * 0.08f : -s * 0.44f), y = c.y + ((i & 2) ? s * 0.08f : -s * 0.44f);
             dl->AddRect(ImVec2(x, y), ImVec2(x + s * 0.36f, y + s * 0.36f), col, s * 0.07f, 0, lw);
@@ -64,7 +81,7 @@ void DrawTabIcon(ImDrawList* dl, int tab, ImVec2 c, float s, ImU32 col) {
 }
 
 // Header button (minimize / close) drawn manually.
-bool HeaderButton(const char* id, ImVec2 size, bool isClose, const Theme& th) {
+bool HeaderButton(const char* id, ImVec2 size, bool isClose, const Theme& th, bool isPin = false, bool pinned = false) {
     ImVec2 p = ImGui::GetCursorScreenPos();
     bool clicked = ImGui::InvisibleButton(id, size);
     bool hovered = ImGui::IsItemHovered();
@@ -76,7 +93,15 @@ bool HeaderButton(const char* id, ImVec2 size, bool isClose, const Theme& th) {
     ImVec2 c(p.x + size.x * 0.5f, p.y + size.y * 0.5f);
     float h = S(5);
     ImU32 col = C32(Mix(th.textDim, isClose ? ImVec4(1, 1, 1, 1) : th.text, hv));
-    if (isClose) {
+    if (isPin) {   // push-pin: head, body and needle (accent colour while pinned)
+        ImU32 pc = C32(pinned ? th.accent : Mix(th.textDim, th.text, hv));
+        float t = pinned ? 0.f : 0.5f;   // pinned = upright, unpinned = tilted
+        ImVec2 top(c.x + t * S(2), c.y - S(6)), bot(c.x - t * S(2), c.y + S(1));
+        dl->AddLine(top, bot, pc, 3.0f);
+        dl->AddLine(ImVec2(c.x - S(5), c.y + S(1)), ImVec2(c.x + S(5), c.y + S(1)), pc, 1.8f);
+        dl->AddLine(ImVec2(c.x, c.y + S(1)), ImVec2(c.x, c.y + S(7)), pc, 1.5f);
+        if (pinned) dl->AddCircleFilled(ImVec2(c.x, c.y - S(6)), S(2.5f), pc, 12);
+    } else if (isClose) {
         dl->AddLine(ImVec2(c.x - h, c.y - h), ImVec2(c.x + h, c.y + h), col, 1.5f);
         dl->AddLine(ImVec2(c.x - h, c.y + h), ImVec2(c.x + h, c.y - h), col, 1.5f);
     } else {
@@ -118,7 +143,9 @@ void DrawMain(Application& app) {
 
     // logo + title
     ImVec2 lc(pos.x + S(24), pos.y + headerH * 0.5f);
-    dl->AddCircle(lc, S(8), C32(th.accent), 32, S(2.2f));
+    if (ThemeManager::Get().HasLogoTexture())
+        dl->AddImage(ThemeManager::Get().LogoTexture(), ImVec2(lc.x - S(13), lc.y - S(13)), ImVec2(lc.x + S(13), lc.y + S(13)));
+    else dl->AddCircle(lc, S(8), C32(th.accent), 32, S(2.2f));
     dl->AddText(ImVec2(pos.x + S(40), pos.y + (headerH - ImGui::GetFontSize()) * 0.5f), C32(th.text), "HATENIUM");
     float tw = ImGui::CalcTextSize("HATENIUM").x;
     char ver[24];
@@ -131,7 +158,8 @@ void DrawMain(Application& app) {
     float by = pos.y + (headerH - bsz.y) * 0.5f;
     float closeX = pos.x + size.x - bsz.x - S(12);
     float minX = closeX - bsz.x - S(4);
-    float rightEdge = minX - S(8);
+    float pinX = minX - bsz.x - S(4);
+    float rightEdge = pinX - S(8);
     if (s.misc.fpsCounter) {
         char fps[24];
         std::snprintf(fps, sizeof(fps), "%d FPS", static_cast<int>(app.Fps() + 0.5f));
@@ -146,6 +174,9 @@ void DrawMain(Application& app) {
         app.window().BeginDragMove();
         ImGui::GetIO().AddMouseButtonEvent(0, false);   // the system move loop swallows the button-up
     }
+    ImGui::SetCursorScreenPos(ImVec2(pinX, by));
+    if (HeaderButton("##pin", bsz, false, th, true, s.alwaysOnTop)) s.alwaysOnTop = !s.alwaysOnTop;
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", tr("Always on Top"));
     ImGui::SetCursorScreenPos(ImVec2(minX, by));
     if (HeaderButton("##min", bsz, false, th)) app.window().Minimize();
     ImGui::SetCursorScreenPos(ImVec2(closeX, by));
@@ -156,16 +187,16 @@ void DrawMain(Application& app) {
     dl->AddRectFilled(sp0, sp1, C32(WithAlpha(th.panel, 0.65f)), R, ImDrawFlags_RoundCornersBottomLeft);
     dl->AddLine(ImVec2(sp1.x, sp0.y), ImVec2(sp1.x, sp1.y), C32(th.border));
 
-    float itemH = S(42), itemGap = S(4), ix = pos.x + S(8), iw = sideW - S(16);
+    float itemH = S(36), itemGap = S(3), ix = pos.x + S(8), iw = sideW - S(16);
     float iy0 = pos.y + headerH + S(14);
-    int active = std::min(std::max(s.lastTab, 0), 4);
+    int active = std::min(std::max(s.lastTab, 0), 7);
 
     float selY = am.Smooth(ImGui::GetID("##selY"), active * (itemH + itemGap), 18.f);
     float rr = std::min(th.buttonRounding, S(10));
     dl->AddRectFilled(ImVec2(ix, iy0 + selY), ImVec2(ix + iw, iy0 + selY + itemH), C32(WithAlpha(th.accent, 0.14f)), rr);
     dl->AddRectFilled(ImVec2(ix, iy0 + selY + S(9)), ImVec2(ix + S(3), iy0 + selY + itemH - S(9)), C32(th.accent), S(2));
 
-    for (int i = 0; i < 5; ++i) {
+    for (int i = 0; i < 8; ++i) {
         ImGui::PushID(i);
         ImGui::SetCursorScreenPos(ImVec2(ix, iy0 + i * (itemH + itemGap)));
         bool clicked = ImGui::InvisibleButton("##tab", ImVec2(iw, itemH));
@@ -224,8 +255,11 @@ void DrawMain(Application& app) {
     switch (active) {
     case 0: DrawCombatPage(app); break;
     case 1: DrawVisualsPage(app); break;
-    case 2: DrawMovementPage(app); break;
-    case 3: DrawMiscPage(app); break;
+    case 2: DrawHudPage(app); break;
+    case 3: DrawMovementPage(app); break;
+    case 4: DrawMiscPage(app); break;
+    case 5: DrawMusicPage(app); break;
+    case 6: DrawToolsPage(app); break;
     default: DrawSettingsPage(app); break;
     }
     ImGui::Dummy(ImVec2(0, S(12)));

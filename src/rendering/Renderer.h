@@ -13,6 +13,7 @@ public:
     void Resize(UINT w, UINT h);
     void BeginFrame(const float rgba[4]);
     bool Present(bool vsync);            // false when the window is occluded
+    ID3D11ShaderResourceView* CreateTextureRGBA(const unsigned char* rgba, int w, int h);   // caller releases
     ID3D11Device* Device() const { return device_; }
     ID3D11DeviceContext* Context() const { return ctx_; }
 private:

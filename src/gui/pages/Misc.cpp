@@ -11,7 +11,6 @@ void DrawMiscPage(Application& app) {
     int cols = ui::ColumnCountForWidth(330);
     if (!ui::BeginColumns("##misc_cols", cols)) return;
 
-    ImGui::TableNextColumn();
     ui::BeginCard("Interface");
     ui::Checkbox("Watermark", &m.watermark);
     ui::Checkbox("Animated Accent", &m.animatedAccent);
@@ -21,7 +20,11 @@ void DrawMiscPage(Application& app) {
     if (ui::SliderFloat("Panel Opacity", &po, 30.f, 100.f, "%.0f%%")) m.panelOpacity = po / 100.f;
     ui::EndCard();
 
-    ImGui::TableNextColumn();
+    ui::BeginCard("Power");
+    ui::Checkbox("Prevent Sleep", &m.preventSleep);
+    ui::NoteText("Keeps Windows and the display awake while Hatenium runs. No fake input is ever sent to any game.");
+    ui::EndCard();
+
     ui::BeginCard("Notification System");
     ui::Checkbox("Notification System", &m.notifications);
     ImGui::Dummy(ImVec2(0, S(4)));

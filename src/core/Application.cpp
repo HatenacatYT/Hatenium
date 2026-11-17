@@ -4,19 +4,21 @@
 #include "gui/Components.h"
 #include "gui/Screens.h"
 #include "gui/ThemeManager.h"
+#include "gui/LogoData.h"
 #include "imgui.h"
 #include "imgui_impl_dx11.h"
 #include "imgui_impl_win32.h"
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstdint>
 #include <filesystem>
 
 namespace hat {
 
 namespace {
 constexpr float kMinSplashSeconds = 2.0f;
-constexpr int kMinMainW = 720, kMinMainH = 460;       // logical pixels
+constexpr int kMinMainW = 720, kMinMainH = 500;       // logical pixels
 constexpr float kDefaultMainW = 1000.f, kDefaultMainH = 640.f;
 constexpr int kInitSteps = 4;
 
@@ -36,11 +38,21 @@ std::string ExeDirA() {
 // ============================================================================ lifetime
 int Application::Run(HINSTANCE inst) {
     WindowManager::EnableDpiAwareness();
+    CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);   // folder dialog / shell
     config_.Init();
     config_.Load(settings_);
     startupMessage_ = config_.TakeMessage();
     AnimationManager::Get().Configure(settings_.misc.uiAnimation, settings_.animationSpeed);
     SetLanguage(settings_.language);
+
+    themes_.Load(config_.Dir());
+    layout_.Load(config_.Dir());
+    playtime_.Load(config_.Dir());
+    {
+        wchar_t exe[MAX_PATH * 2];
+        DWORD n = GetModuleFileNameW(nullptr, exe, MAX_PATH * 2);
+        region_.SetDataDir(config_.Dir(), std::filesystem::path(std::wstring(exe, n)).parent_path());
+    }
 
     if (!InitGraphics(inst)) return 1;
     lastSaved_ = ConfigManager::Serialize(settings_);
@@ -53,7 +65,9 @@ int Application::Run(HINSTANCE inst) {
         if (wm_.QuitRequested()) break;
         if (wm_.CloseRequested()) {
             StoreWindowState();
+            profiles_.Release(settings_);
             SaveSettings(false);
+            playtime_.Flush();
             wm_.Destroy();             // posts WM_QUIT; the loop ends on the next check
             wm_.PumpMessages();
             break;
@@ -63,11 +77,12 @@ int Application::Run(HINSTANCE inst) {
         float dt = std::min(std::chrono::duration<float>(now - prev).count(), 0.1f);
         prev = now;
 
-        if (wm_.IsMinimized()) { Sleep(50); continue; }
+        if (wm_.IsMinimized()) { BackgroundTick(dt); Sleep(8); continue; }
 
         AnimationManager& am = AnimationManager::Get();
         am.Configure(settings_.misc.uiAnimation, settings_.animationSpeed);
         am.Update(dt);
+        BackgroundTick(dt);
         SyncScaleAndLanguage();
         UpdateSplashTasks(dt);
         UpdateTransition();
@@ -126,6 +141,11 @@ bool Application::InitGraphics(HINSTANCE inst) {
     scale_ = wm_.DpiScale() * settings_.uiScale;
     ThemeManager::Get().SetScale(scale_);
     RebuildFonts();
+
+    logoSrv_ = renderer_.CreateTextureRGBA(kLogoRgba, kLogoW, kLogoH);
+    if (logoSrv_) ThemeManager::Get().SetLogoTexture((ImTextureID)(uintptr_t)logoSrv_);
+    overlay_.Init(inst);
+    if (!music_.Init()) { /* no audio device: the Music tab explains it */ }
     ThemeManager::Get().Update(settings_, 0.f, true);
     wm_.SetRoundRadius(static_cast<int>(std::lround(ThemeManager::Get().T().windowRounding)));
     wm_.Show();
@@ -133,6 +153,11 @@ bool Application::InitGraphics(HINSTANCE inst) {
 }
 
 void Application::Shutdown() {
+    SetThreadExecutionState(ES_CONTINUOUS);
+    youtube_.Close();
+    overlay_.Shutdown();
+    music_.Shutdown();
+    if (logoSrv_) { logoSrv_->Release(); logoSrv_ = nullptr; }
     if (imguiReady_) {
         ImGui_ImplDX11_Shutdown();
         ImGui_ImplWin32_Shutdown();
@@ -141,6 +166,93 @@ void Application::Shutdown() {
     }
     renderer_.Shutdown();
     wm_.Destroy();
+}
+
+// ============================================================================ background work
+void Application::BackgroundTick(float dt) {
+    if (wm_.Hwnd() && settings_.alwaysOnTop != wm_.Topmost()) wm_.SetTopmost(settings_.alwaysOnTop);
+    tools_.Update(dt);
+    if (tools_.ConsumeTimerFinished()) { ui::Notify(tr("Timer finished!"), 1); MessageBeep(MB_ICONASTERISK); }
+    {
+        std::string pname;
+        if (profiles_.Update(dt, settings_, pname))
+            ui::Notify(pname.empty() ? std::string(tr("Profile off - back to your setup"))
+                                     : std::string(tr("Profile")) + ": " + pname, 0);
+    }
+    playtime_.Update(dt, profiles_.Processes(), settings_.tools);
+    overlay_.Update(dt, settings_, hudEdit_, tools_.DisplayText());
+    if (overlay_.ConsumeMonitorKeyChanged()) layout_.Apply(overlay_.MonitorKey(), settings_.hud);
+    if (overlay_.ConsumeLayoutChanged()) {
+        layout_.Store(overlay_.MonitorKey(), settings_.hud);
+        layout_.Save();
+        ui::Notify(tr("Layout saved"), 1);
+    }
+    music_.Update(settings_.music);
+    youtube_.Update();
+
+    bool want = settings_.misc.preventSleep;
+    if (want != sleepBlocked_) {
+        SetThreadExecutionState(want ? (ES_CONTINUOUS | ES_SYSTEM_REQUIRED | ES_DISPLAY_REQUIRED) : ES_CONTINUOUS);
+        sleepBlocked_ = want;
+    }
+    auto dropped = wm_.TakeDroppedFiles();
+    if (!dropped.empty()) {
+        size_t before = settings_.music.tracks.size();
+        music_.AddPaths(settings_.music, dropped);
+        size_t added = settings_.music.tracks.size() - before;
+        ui::Notify(std::to_string(added) + " " + tr("tracks added"), added ? 1 : 2);
+    }
+}
+
+void Application::StartLayoutEdit() {
+    if (!settings_.visuals.overlay.enable) settings_.visuals.overlay.enable = true;
+    hudEdit_ = true;
+    ui::Notify(tr("Layout edit mode: drag the HUD on your screen"), 0);
+}
+
+void Application::ExportPreset() {
+    std::wstring path = wm_.FileDialog(true, L"hatenium-preset.json");
+    if (path.empty()) return;
+    std::string err = config_.ExportPreset(settings_, std::filesystem::path(path));
+    ui::Notify(err.empty() ? std::string(tr("Preset exported")) : std::string(tr(err.c_str())), err.empty() ? 1 : 2);
+}
+
+void Application::ImportPreset() {
+    std::wstring path = wm_.FileDialog(false, nullptr);
+    if (path.empty()) return;
+    std::string err = config_.ImportPreset(settings_, std::filesystem::path(path));
+    ui::Notify(err.empty() ? std::string(tr("Preset imported")) : std::string(tr(err.c_str())), err.empty() ? 1 : 2);
+}
+
+void Application::ExportTheme(int index) {
+    std::wstring path = wm_.FileDialog(true, L"hatenium-theme.json");
+    if (path.empty()) return;
+    std::string err = themes_.Export(index, std::filesystem::path(path));
+    ui::Notify(err.empty() ? std::string(tr("Theme exported")) : std::string(tr(err.c_str())), err.empty() ? 1 : 2);
+}
+
+void Application::ImportTheme() {
+    std::wstring path = wm_.FileDialog(false, nullptr);
+    if (path.empty()) return;
+    std::string err = themes_.Import(std::filesystem::path(path));
+    if (err.empty()) themes_.Save();
+    ui::Notify(err.empty() ? std::string(tr("Theme imported")) : std::string(tr(err.c_str())), err.empty() ? 1 : 2);
+}
+
+void Application::AddMusicFiles() {
+    auto files = wm_.OpenMusicFilesDialog();
+    if (files.empty()) return;
+    size_t before = settings_.music.tracks.size();
+    music_.AddPaths(settings_.music, files);
+    ui::Notify(std::to_string(settings_.music.tracks.size() - before) + " " + tr("tracks added"), 1);
+}
+
+void Application::AddMusicFolder() {
+    std::wstring dir = wm_.FolderDialog();
+    if (dir.empty()) return;
+    size_t before = settings_.music.tracks.size();
+    music_.AddPaths(settings_.music, {dir});
+    ui::Notify(std::to_string(settings_.music.tracks.size() - before) + " " + tr("tracks added"), 1);
 }
 
 // ============================================================================ fonts / scale
@@ -386,10 +498,17 @@ void Application::ReopenSetup() {
 }
 
 // ============================================================================ settings actions
+Settings Application::SnapshotForSave() const {
+    Settings out = settings_;
+    profiles_.WriteBaseInto(out, settings_);
+    return out;
+}
+
 bool Application::SaveSettings(bool notify) {
     StoreWindowState();
-    bool ok = config_.Save(settings_);
-    if (ok) lastSaved_ = ConfigManager::Serialize(settings_);
+    Settings snap = SnapshotForSave();
+    bool ok = config_.Save(snap);
+    if (ok) lastSaved_ = ConfigManager::Serialize(snap);
     if (notify) ui::Notify(tr(ok ? "Settings saved" : "Could not save settings"), ok ? 1 : 2);
     return ok;
 }
@@ -399,8 +518,9 @@ void Application::AutoSave(float dt) {
     if (autoSaveTimer_ < 3.f || transitioning_ || screen_ == Screen::Splash) return;
     autoSaveTimer_ = 0.f;
     StoreWindowState();
-    std::string cur = ConfigManager::Serialize(settings_);
-    if (cur != lastSaved_ && config_.Save(settings_)) lastSaved_ = cur;
+    Settings snap = SnapshotForSave();
+    std::string cur = ConfigManager::Serialize(snap);
+    if (cur != lastSaved_ && config_.Save(snap)) lastSaved_ = cur;
 }
 
 void Application::LoadSettings() {
@@ -430,6 +550,7 @@ void Application::ResetAllSettings() {
     Settings d;
     d.firstLaunch = false;
     d.lastTab = settings_.lastTab;
+    d.music = settings_.music;   // keep the playlist
     d.hasWindowPos = settings_.hasWindowPos;
     d.windowX = settings_.windowX; d.windowY = settings_.windowY;
     d.windowW = settings_.windowW; d.windowH = settings_.windowH;
@@ -441,7 +562,8 @@ void Application::ExportSettings() {
     StoreWindowState();
     std::wstring path = wm_.FileDialog(true, L"hatenium-config.json");
     if (path.empty()) return;
-    bool ok = config_.Export(settings_, std::filesystem::path(path));
+    Settings snap = SnapshotForSave();
+    bool ok = config_.Export(snap, std::filesystem::path(path));
     ui::Notify(tr(ok ? "Exported" : "Could not save settings"), ok ? 1 : 2);
 }
 

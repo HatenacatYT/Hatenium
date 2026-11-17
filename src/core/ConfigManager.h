@@ -16,6 +16,10 @@ public:
     static std::string Serialize(const Settings& s);
     std::string TakeMessage() { std::string m; m.swap(message_); return m; }
     const std::filesystem::path& Path() const { return path_; }
+    const std::filesystem::path& Dir() const { return dir_; }
+    // Shareable presets: visuals + HUD only (no window state, music, profiles). Returns an error text, empty on success.
+    std::string ExportPreset(const Settings& s, const std::filesystem::path& file);
+    std::string ImportPreset(Settings& s, const std::filesystem::path& file);
 private:
     std::filesystem::path dir_, path_;
     std::string message_;

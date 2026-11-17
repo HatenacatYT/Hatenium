@@ -62,6 +62,25 @@ bool Renderer::Present(bool vsync) {
     return hr != DXGI_STATUS_OCCLUDED;
 }
 
+ID3D11ShaderResourceView* Renderer::CreateTextureRGBA(const unsigned char* rgba, int w, int h) {
+    D3D11_TEXTURE2D_DESC td = {};
+    td.Width = static_cast<UINT>(w); td.Height = static_cast<UINT>(h);
+    td.MipLevels = 1; td.ArraySize = 1;
+    td.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+    td.SampleDesc.Count = 1;
+    td.Usage = D3D11_USAGE_IMMUTABLE;
+    td.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+    D3D11_SUBRESOURCE_DATA sd = {};
+    sd.pSysMem = rgba; sd.SysMemPitch = static_cast<UINT>(w * 4);
+    ID3D11Texture2D* tex = nullptr;
+    ID3D11ShaderResourceView* srv = nullptr;
+    if (SUCCEEDED(device_->CreateTexture2D(&td, &sd, &tex)) && tex) {
+        device_->CreateShaderResourceView(tex, nullptr, &srv);
+        tex->Release();
+    }
+    return srv;
+}
+
 void Renderer::Shutdown() {
     ReleaseTarget();
     if (swap_)   { swap_->Release();   swap_ = nullptr; }

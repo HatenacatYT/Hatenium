@@ -36,17 +36,24 @@ void DrawSplash(Application& app) {
     }
 
     // logo: halo ring + HATENIUM
-    ImVec2 halo(c.x, c.y - 66.f * u);
+    ImVec2 halo(c.x, c.y - 78.f * u);
     float pulse = 0.5f + 0.5f * std::sin(t * 2.2f);
-    dl->AddCircle(halo, 17.f * u, C32(WithAlpha(th.accent, 0.12f + 0.10f * pulse)), 48, 7.f * u);
-    dl->AddCircle(halo, 17.f * u, C32(th.accent), 48, 2.4f * u);
+    if (ThemeManager::Get().HasLogoTexture()) {
+        float hs = 78.f * u, bob = std::sin(t * 2.0f) * 2.f * u;
+        dl->AddCircleFilled(ImVec2(halo.x, halo.y + 6.f * u), 40.f * u, C32(WithAlpha(th.accent, 0.05f + 0.05f * pulse)), 48);
+        dl->AddImage(ThemeManager::Get().LogoTexture(), ImVec2(halo.x - hs * 0.5f, halo.y - hs * 0.5f + bob),
+                     ImVec2(halo.x + hs * 0.5f, halo.y + hs * 0.5f + bob), ImVec2(0, 0), ImVec2(1, 1), C32(ImVec4(1, 1, 1, 1)));
+    } else {
+        dl->AddCircle(halo, 17.f * u, C32(WithAlpha(th.accent, 0.12f + 0.10f * pulse)), 48, 7.f * u);
+        dl->AddCircle(halo, 17.f * u, C32(th.accent), 48, 2.4f * u);
+    }
 
     ImFont* logo = ThemeManager::Get().LogoFont();
     if (!logo) logo = ImGui::GetFont();
     float fs = logo->FontSize * std::min(1.25f, std::max(0.6f, u / th.scale));
     float spacing = fs * 0.22f;
     float tw = SpacedTextWidth(logo, fs, "HATENIUM", spacing);
-    ImVec2 tp(c.x - tw * 0.5f, c.y - 36.f * u);
+    ImVec2 tp(c.x - tw * 0.5f, c.y - 28.f * u);
     DrawSpacedText(dl, logo, fs, ImVec2(tp.x + 1.5f, tp.y + 1.5f), C32(WithAlpha(th.accent, 0.25f)), "HATENIUM", spacing);
     DrawSpacedText(dl, logo, fs, tp, C32(th.text), "HATENIUM", spacing);
 

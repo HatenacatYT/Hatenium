@@ -1,5 +1,7 @@
 #pragma once
 #include <array>
+#include <string>
+#include <vector>
 #include <nlohmann/json.hpp>
 
 namespace hat {
@@ -68,8 +70,14 @@ struct CrosshairSettings {
     float thickness = 1.5f;
     Col3  color{1.f, 1.f, 1.f};
     float opacity = 1.f;
+    bool  spreadOnShoot = false;   // gap widens while the left mouse button is held
+    bool  shrinkOnMove = false;    // gap narrows while W/A/S/D is held
+    float animAmount = 8.f;        // px
+    float animSpeed = 12.f;        // higher = faster
+    int   easing = 1;              // 0 Linear, 1 Ease Out
 };
-NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(CrosshairSettings, enable, style, size, gap, thickness, color, opacity)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(CrosshairSettings, enable, style, size, gap, thickness, color, opacity,
+    spreadOnShoot, shrinkOnMove, animAmount, animSpeed, easing)
 
 struct EspSettings {   // settings only - nothing is ever drawn or detected
     bool box = false;
@@ -79,12 +87,128 @@ struct EspSettings {   // settings only - nothing is ever drawn or detected
 };
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(EspSettings, box, name, distance, snaplines)
 
+struct OverlaySettings {   // real on-screen overlay (transparent, click-through window drawn by Hatenium itself)
+    bool enable = false;
+    int  monitor = 0;      // 0 primary, 1..n = nth monitor, 100 = all monitors
+};
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(OverlaySettings, enable, monitor)
+
+struct MouseTrailSettings {
+    bool  enable = false;
+    int   style = 0;          // 0 Line, 1 Dots, 2 Comet
+    int   colorMode = 0;      // 0 Solid, 1 Gradient, 2 Rainbow
+    Col3  color{0.0f, 0.9f, 1.0f};
+    Col3  color2{0.58f, 0.38f, 1.0f};
+    float thickness = 4.f;    // px
+    float lifetimeMs = 450.f;
+    float opacity = 0.9f;
+    bool  taper = true;
+    bool  glow = true;
+    float rainbowSpeed = 1.f;
+};
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(MouseTrailSettings, enable, style, colorMode, color, color2, thickness,
+    lifetimeMs, opacity, taper, glow, rainbowSpeed)
+
+struct ClickParticleSettings {
+    bool  enable = false;
+    bool  onLeft = true;
+    bool  onRight = false;
+    int   count = 18;
+    int   shape = 0;          // 0 Circle, 1 Square, 2 Star, 3 Ring
+    int   colorMode = 0;      // 0 Solid, 1 Gradient, 2 Rainbow, 3 Random
+    Col3  color{0.0f, 0.9f, 1.0f};
+    Col3  color2{1.0f, 0.3f, 0.6f};
+    float size = 6.f;         // px
+    float speed = 260.f;      // px/s
+    float lifetimeMs = 700.f;
+    float gravity = 300.f;    // px/s^2 (0 = none)
+    float opacity = 1.f;
+};
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(ClickParticleSettings, enable, onLeft, onRight, count, shape, colorMode,
+    color, color2, size, speed, lifetimeMs, gravity, opacity)
+
 struct VisualSettings {
     FovCircleSettings fovCircle;
     CrosshairSettings crosshair;
     EspSettings esp;
+    OverlaySettings overlay;
+    MouseTrailSettings trail;
+    ClickParticleSettings particles;
 };
-NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(VisualSettings, fovCircle, crosshair, esp)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(VisualSettings, fovCircle, crosshair, esp, overlay, trail, particles)
+
+// ---- HUD (drawn by the overlay) -------------------------------------------
+struct KeyOverlaySettings {
+    bool  enable = false;
+    bool  w = true, a = true, s = true, d = true, space = true, shift = true, ctrl = true, lmb = true, rmb = true;
+    bool  r = false, e = false, q = false, f = false, side1 = false, side2 = false;
+    float scale = 1.f;
+    float posX = 2.f, posY = 55.f;                 // % of the monitor (top-left of the block)
+    Col3  activeColor{0.0f, 0.9f, 1.0f};
+    Col3  inactiveColor{0.08f, 0.10f, 0.15f};
+    Col3  textColor{0.9f, 0.95f, 1.0f};
+    float opacity = 0.9f;
+    bool  showLabels = true;
+};
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(KeyOverlaySettings, enable, w, a, s, d, space, shift, ctrl, lmb, rmb,
+    r, e, q, f, side1, side2, scale, posX, posY, activeColor, inactiveColor, textColor, opacity, showLabels)
+
+struct CpsSettings {
+    bool  enable = false;
+    bool  showMax = true;
+    float scale = 1.f;
+    float posX = 2.f, posY = 42.f;
+    Col3  color{0.0f, 0.9f, 1.0f};
+    float opacity = 0.95f;
+};
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(CpsSettings, enable, showMax, scale, posX, posY, color, opacity)
+
+struct WatermarkSettings {          // streamer watermark: a PNG/JPEG shown on the overlay
+    bool  enable = false;
+    std::string path;               // UTF-8
+    float posX = 84.f, posY = 3.f;  // % of the monitor
+    float scale = 1.f;              // relative to the image's pixel size
+    float opacity = 0.8f;
+};
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(WatermarkSettings, enable, path, posX, posY, scale, opacity)
+
+struct TimerHudSettings {           // shows the running timer / stopwatch on the overlay
+    bool  enable = false;
+    float posX = 44.f, posY = 10.f;
+    float scale = 1.f;
+};
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(TimerHudSettings, enable, posX, posY, scale)
+
+struct HudSettings {
+    KeyOverlaySettings keys;
+    CpsSettings cps;
+    WatermarkSettings watermark;
+    TimerHudSettings timer;
+    Col3  background{0.04f, 0.06f, 0.10f};
+    float borderThickness = 1.5f;
+    std::string theme = "Cyberpunk";
+};
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(HudSettings, keys, cps, watermark, timer, background, borderThickness, theme)
+
+struct GameProfile {                // switched automatically while the process is running
+    std::string name;
+    std::string exe;                // e.g. RobloxPlayerBeta.exe
+    bool enabled = true;
+    CrosshairSettings crosshair;
+    HudSettings hud;
+    int aimbotKey = 0;
+    int triggerKey = 0;
+};
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(GameProfile, name, exe, enabled, crosshair, hud, aimbotKey, triggerKey)
+
+struct ToolsSettings {
+    int  timerMinutes = 10;
+    int  timerSeconds = 0;
+    bool trackPlaytime = true;
+    bool onlineIpLookup = true;        // look the Roblox server IP up online (only that IP is sent)
+    std::vector<std::string> trackedProcesses{"RobloxPlayerBeta.exe"};
+};
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(ToolsSettings, timerMinutes, timerSeconds, trackPlaytime, onlineIpLookup, trackedProcesses)
 
 // ---- Movement / Misc ----------------------------------------------------
 struct MovementSettings {
@@ -102,8 +226,20 @@ struct MiscSettings {
     bool  notifications = true;
     bool  uiAnimation = true;
     float panelOpacity = 0.92f;
+    bool  preventSleep = false;    // keeps Windows/display awake (SetThreadExecutionState); no fake input is ever sent
 };
-NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(MiscSettings, watermark, animatedAccent, fpsCounter, notifications, uiAnimation, panelOpacity)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(MiscSettings, watermark, animatedAccent, fpsCounter, notifications, uiAnimation, panelOpacity, preventSleep)
+
+struct MusicSettings {
+    float volume = 0.7f;
+    bool  shuffle = false;
+    int   repeat = 0;                 // 0 off, 1 all, 2 one
+    int   current = -1;
+    int   source = 0;                 // 0 Local, 1 YouTube
+    std::vector<std::string> tracks;  // UTF-8 file paths
+    std::string youtubeHome = "https://music.youtube.com";
+};
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(MusicSettings, volume, shuffle, repeat, current, source, tracks, youtubeHome)
 
 // ---- Root ---------------------------------------------------------------
 struct Settings {
@@ -121,6 +257,7 @@ struct Settings {
     int   windowW = 0, windowH = 0;     // logical pixels (DPI independent)
     bool  rememberPosition = true;
     bool  rememberSize = true;
+    bool  alwaysOnTop = false;          // keep the Hatenium window above other windows
 
     bool  startupAnimation = true;
     float animationSpeed = 1.0f;
@@ -129,11 +266,15 @@ struct Settings {
 
     CombatSettings   combat;
     VisualSettings   visuals;
+    HudSettings      hud;
     MovementSettings movement;
     MiscSettings     misc;
+    MusicSettings    music;
+    ToolsSettings    tools;
+    std::vector<GameProfile> profiles;
 };
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Settings, version, firstLaunch, theme, customColor, buttonShape,
-    windowAppearance, uiScale, hasWindowPos, windowX, windowY, windowW, windowH, rememberPosition, rememberSize,
-    startupAnimation, animationSpeed, language, lastTab, combat, visuals, movement, misc)
+    windowAppearance, uiScale, hasWindowPos, windowX, windowY, windowW, windowH, rememberPosition, rememberSize, alwaysOnTop,
+    startupAnimation, animationSpeed, language, lastTab, combat, visuals, hud, movement, misc, music, tools, profiles)
 
 } // namespace hat
